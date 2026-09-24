@@ -1,0 +1,45 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "recodiar"
+version = "0.1.0"
+description = "Resumable chunked transcription and diarization for long recordings"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "numpy>=1.26,<3",
+  "soundfile>=0.12,<1",
+]
+
+[project.optional-dependencies]
+moss = [
+  "moss-transcribe-diarize @ git+https://github.com/OpenMOSS/MOSS-Transcribe-Diarize.git@61bc29cd4120be7b5d3b761b64cd5dff57263642",
+]
+speaker = ["pyannote.audio==3.4.0"]
+dev = [
+  "pytest>=8.4,<9",
+  "ruff>=0.13,<1",
+]
+
+[project.scripts]
+recodiar = "recodiar.cli:main"
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/recodiar"]
+
+[tool.pytest.ini_options]
+addopts = "-q"
+pythonpath = ["src"]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
