@@ -33,9 +33,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--overlap-seconds", type=float, default=45.0)
     parser.add_argument("--min-chunk-seconds", type=float, default=120.0)
     parser.add_argument(
-        "--whole-max-seconds",
+        "--tail-merge-ratio",
         type=float,
-        help="decode recordings up to this long as one chunk (between 1x and 2x --chunk-seconds)",
+        default=0.0,
+        help="a remainder shorter than this share of --chunk-seconds joins the previous chunk "
+        "(0..1; 0.8 decodes 600 s chunks' recordings under 18 min whole)",
     )
     parser.add_argument("--tail-tolerance", type=float, default=5.0)
     parser.add_argument("--vad-threshold-dbfs", type=float, default=-45.0)
@@ -60,7 +62,7 @@ def main(argv: list[str] | None = None) -> int:
         chunk_seconds=args.chunk_seconds,
         overlap_seconds=args.overlap_seconds,
         min_chunk_seconds=args.min_chunk_seconds,
-        whole_max_seconds=args.whole_max_seconds,
+        tail_merge_ratio=args.tail_merge_ratio,
         tail_tolerance=args.tail_tolerance,
         vad_threshold_dbfs=args.vad_threshold_dbfs,
         vad_min_active_seconds=args.vad_min_active_seconds,

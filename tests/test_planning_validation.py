@@ -14,30 +14,39 @@ def test_plan_chunks_adds_context_overlap() -> None:
     ]
 
 
-def test_short_enough_recording_is_one_chunk() -> None:
-    assert plan_chunks(0.0, 1_080.0, 600.0, 45.0, whole_max_seconds=1_080.0) == [
-        Chunk(0.0, 1_080.0)
+def test_a_short_remainder_joins_the_previous_chunk() -> None:
+    # Under 0.8 of a chunk past the first one: the whole recording is one chunk.
+    assert plan_chunks(0.0, 1_079.0, 600.0, 45.0, tail_merge_ratio=0.8) == [
+        Chunk(0.0, 1_079.0)
     ]
-    # One second past the limit is chunked as before.
-    assert plan_chunks(0.0, 1_081.0, 600.0, 45.0, whole_max_seconds=1_080.0) == [
+    # A remainder of exactly 0.8 is a chunk of its own, as before.
+    assert plan_chunks(0.0, 1_080.0, 600.0, 45.0, tail_merge_ratio=0.8) == [
         Chunk(0.0, 600.0),
-        Chunk(555.0, 1_081.0),
+        Chunk(555.0, 1_080.0),
     ]
+    # The rule holds at every boundary, not only the first: 27 minutes is two chunks, not three.
+    assert plan_chunks(0.0, 1_620.0, 600.0, 45.0, tail_merge_ratio=0.8) == [
+        Chunk(0.0, 600.0),
+        Chunk(555.0, 1_620.0),
+    ]
+    assert plan_chunks(0.0, 1_400.0, 600.0, 45.0) == plan_chunks(
+        0.0, 1_400.0, 600.0, 45.0, tail_merge_ratio=0.0
+    )
     # A tail repair measures the span it decodes, not the recording.
-    assert plan_chunks(900.0, 1_900.0, 600.0, 45.0, whole_max_seconds=1_080.0) == [
+    assert plan_chunks(900.0, 1_900.0, 600.0, 45.0, tail_merge_ratio=0.8) == [
         Chunk(900.0, 1_900.0)
     ]
 
 
-def test_whole_limit_must_lie_between_one_and_two_chunks() -> None:
+def test_merge_ratio_must_lie_between_zero_and_one() -> None:
     import pytest
 
     from recodiar.pipeline import PipelineConfig
 
-    PipelineConfig(chunk_seconds=600.0, whole_max_seconds=1_080.0)
-    for bad in (599.0, 1_201.0):
+    PipelineConfig(chunk_seconds=600.0, tail_merge_ratio=0.8)
+    for bad in (-0.1, 1.01):
         with pytest.raises(ValueError):
-            PipelineConfig(chunk_seconds=600.0, whole_max_seconds=bad)
+            PipelineConfig(chunk_seconds=600.0, tail_merge_ratio=bad)
 
 
 def test_split_respects_actual_child_duration() -> None:

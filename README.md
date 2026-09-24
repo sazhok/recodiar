@@ -14,9 +14,10 @@ the original timeline.
   uncovered active audio.
 - Resumable, deterministic per-chunk cache with atomic metadata writes.
 - Adaptive retry down to a configurable minimum chunk size.
-- Recordings up to `--whole-max-seconds` (between one and two chunk lengths,
-  e.g. `1080` for `600 s` chunks) decoded as one chunk, so a short tail never
-  costs a chunk boundary.
+- A remainder shorter than `--tail-merge-ratio` of a chunk (0..1, e.g. `0.8`)
+  joins the chunk before it, so a short tail never costs a chunk boundary: with
+  `600 s` chunks a recording under 18 minutes is decoded whole, and a 27-minute
+  one as two chunks instead of three.
 - Speaker reconciliation from shared context, externally supplied diarization
   turns, or voice embeddings. Embeddings are consulted only when some voice of
   the previous chunk found no shared replica in the overlap and a label is
@@ -49,7 +50,7 @@ recodiar input/ output/chunked \
   --chunk-seconds 600 \
   --overlap-seconds 45 \
   --min-chunk-seconds 120 \
-  --whole-max-seconds 1080 \
+  --tail-merge-ratio 0.8 \
   --max-new-tokens 16384 \
   --speaker-embedding-model pyannote/wespeaker-voxceleb-resnet34-LM
 ```

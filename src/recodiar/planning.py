@@ -10,27 +10,30 @@ def plan_chunks(
     end: float,
     chunk_seconds: float,
     overlap_seconds: float,
-    whole_max_seconds: float | None = None,
+    tail_merge_ratio: float = 0.0,
 ) -> list[Chunk]:
-    """Overlapping chunks of `chunk_seconds`, or one chunk when the span is short enough.
+    """Overlapping chunks of `chunk_seconds`, the last one absorbing a short remainder.
 
-    `whole_max_seconds` exists because a second chunk is not free: every chunk boundary is a
-    place where speakers have to be reconciled from whatever the overlap happens to contain.
-    A recording of 11 minutes cut at 10 would pay that for one minute of tail, so anything up
-    to `whole_max_seconds` is decoded whole. It lies between one and two chunk lengths: below
-    one it would change nothing, and past two a single decode is longer than the two chunks
-    it replaces. A whole decode the model ends early is still split by the adaptive retry.
+    A chunk boundary is not free: it is a place where speakers have to be reconciled from
+    whatever the overlap happens to contain. So when the audio left past a chunk's end is
+    shorter than `tail_merge_ratio * chunk_seconds`, that chunk is extended to the end instead
+    of paying a boundary for a short tail. With 600 s chunks and 0.8, a recording under 18
+    minutes is one chunk, and a 27-minute one is two (600 s, then 555 s to the end) rather
+    than three. The ratio lies in [0, 1], so no chunk grows past two chunk lengths; 0 keeps
+    plain chunking. A merged chunk the model ends early is still split by the adaptive retry.
     """
     if end <= start:
         return []
     if chunk_seconds <= 0 or overlap_seconds < 0 or overlap_seconds >= chunk_seconds:
         raise ValueError("Require chunk_seconds > overlap_seconds >= 0")
-    if whole_max_seconds is not None and end - start <= whole_max_seconds:
-        return [Chunk(round(start, 6), round(end, 6))]
+    if not 0.0 <= tail_merge_ratio <= 1.0:
+        raise ValueError("Require 0 <= tail_merge_ratio <= 1")
     chunks: list[Chunk] = []
     cursor = start
     while cursor < end:
         chunk_end = min(end, cursor + chunk_seconds)
+        if end - chunk_end < tail_merge_ratio * chunk_seconds:
+            chunk_end = end
         chunks.append(Chunk(round(cursor, 6), round(chunk_end, 6)))
         if chunk_end >= end:
             break

@@ -34,9 +34,9 @@ class PipelineConfig:
     max_length: int = 131_072
     embedding_threshold: float = 0.62
     model_revision: str | None = None
-    # Recordings up to this long are decoded as one chunk; None keeps plain chunking. Must lie
-    # in [chunk_seconds, 2 * chunk_seconds] - see planning.plan_chunks.
-    whole_max_seconds: float | None = None
+    # A remainder shorter than this share of a chunk joins the chunk before it; 0 keeps plain
+    # chunking. Must lie in [0, 1] - see planning.plan_chunks.
+    tail_merge_ratio: float = 0.0
 
     def __post_init__(self) -> None:
         if self.chunk_seconds <= self.overlap_seconds or self.overlap_seconds < 0:
@@ -47,10 +47,8 @@ class PipelineConfig:
             raise ValueError("tail_tolerance cannot be negative")
         if self.max_new_tokens <= 0 or self.max_length <= 0:
             raise ValueError("token limits must be positive")
-        if self.whole_max_seconds is not None and not (
-            self.chunk_seconds <= self.whole_max_seconds <= 2 * self.chunk_seconds
-        ):
-            raise ValueError("Require chunk_seconds <= whole_max_seconds <= 2 * chunk_seconds")
+        if not 0.0 <= self.tail_merge_ratio <= 1.0:
+            raise ValueError("Require 0 <= tail_merge_ratio <= 1")
 
 
 def recording_name(audio_path: Path) -> str:
@@ -345,7 +343,7 @@ class ChunkedTranscriptionPipeline:
                 info.duration,
                 self.config.chunk_seconds,
                 self.config.overlap_seconds,
-                self.config.whole_max_seconds,
+                self.config.tail_merge_ratio,
             )
             chunk_results, manifest = transcribe_adaptive(
                 audio_path,
