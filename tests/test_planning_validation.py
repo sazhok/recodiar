@@ -14,6 +14,32 @@ def test_plan_chunks_adds_context_overlap() -> None:
     ]
 
 
+def test_short_enough_recording_is_one_chunk() -> None:
+    assert plan_chunks(0.0, 1_080.0, 600.0, 45.0, whole_max_seconds=1_080.0) == [
+        Chunk(0.0, 1_080.0)
+    ]
+    # One second past the limit is chunked as before.
+    assert plan_chunks(0.0, 1_081.0, 600.0, 45.0, whole_max_seconds=1_080.0) == [
+        Chunk(0.0, 600.0),
+        Chunk(555.0, 1_081.0),
+    ]
+    # A tail repair measures the span it decodes, not the recording.
+    assert plan_chunks(900.0, 1_900.0, 600.0, 45.0, whole_max_seconds=1_080.0) == [
+        Chunk(900.0, 1_900.0)
+    ]
+
+
+def test_whole_limit_must_lie_between_one_and_two_chunks() -> None:
+    import pytest
+
+    from recodiar.pipeline import PipelineConfig
+
+    PipelineConfig(chunk_seconds=600.0, whole_max_seconds=1_080.0)
+    for bad in (599.0, 1_201.0):
+        with pytest.raises(ValueError):
+            PipelineConfig(chunk_seconds=600.0, whole_max_seconds=bad)
+
+
 def test_split_respects_actual_child_duration() -> None:
     left, right = split_chunk(Chunk(100.0, 700.0), 40.0)
     assert left == Chunk(100.0, 420.0, 1)

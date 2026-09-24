@@ -34,6 +34,9 @@ class PipelineConfig:
     max_length: int = 131_072
     embedding_threshold: float = 0.62
     model_revision: str | None = None
+    # Recordings up to this long are decoded as one chunk; None keeps plain chunking. Must lie
+    # in [chunk_seconds, 2 * chunk_seconds] - see planning.plan_chunks.
+    whole_max_seconds: float | None = None
 
     def __post_init__(self) -> None:
         if self.chunk_seconds <= self.overlap_seconds or self.overlap_seconds < 0:
@@ -44,6 +47,10 @@ class PipelineConfig:
             raise ValueError("tail_tolerance cannot be negative")
         if self.max_new_tokens <= 0 or self.max_length <= 0:
             raise ValueError("token limits must be positive")
+        if self.whole_max_seconds is not None and not (
+            self.chunk_seconds <= self.whole_max_seconds <= 2 * self.chunk_seconds
+        ):
+            raise ValueError("Require chunk_seconds <= whole_max_seconds <= 2 * chunk_seconds")
 
 
 def recording_name(audio_path: Path) -> str:
@@ -338,6 +345,7 @@ class ChunkedTranscriptionPipeline:
                 info.duration,
                 self.config.chunk_seconds,
                 self.config.overlap_seconds,
+                self.config.whole_max_seconds,
             )
             chunk_results, manifest = transcribe_adaptive(
                 audio_path,
@@ -352,12 +360,14 @@ class ChunkedTranscriptionPipeline:
                 chunk_results.insert(0, base)
 
         reference_turns = load_reference_turns(reference_diarization_dir, recording)
+        mapping_stats: dict[str, Any] = {}
         mapped = map_speakers(
             chunk_results,
             audio_path,
             embedder=self.embedder,
             embedding_threshold=self.config.embedding_threshold,
             reference_turns=reference_turns,
+            stats=mapping_stats,
         )
         merged = merge_chunks(mapped)
         payload = [asdict(segment) for segment in merged]
@@ -389,15 +399,16 @@ class ChunkedTranscriptionPipeline:
             "last_segment_end": final_last,
             "tail_gap_seconds": max(0.0, info.duration - final_last),
             "speaker_mapping": (
-                "reference_diarization_then_overlap_then_embedding"
+                "reference_diarization_then_overlap_then_embedding_if_voices_missing"
                 if reference_turns and self.embedder
                 else "reference_diarization_then_overlap"
                 if reference_turns
-                else "overlap_then_pyannote_embedding"
+                else "overlap_then_embedding_if_voices_missing"
                 if self.embedder
                 else "overlap"
             ),
             "speaker_embedding_model": getattr(self.embedder, "model_name", None),
+            "embedding_chunks": mapping_stats.get("embedding_chunks", 0),
         }
         atomic_write(
             destination / "metadata.json",

@@ -11,7 +11,8 @@ For an input named `meeting.flac`, the pipeline writes `OUTPUT/meeting/`.
   `[start][speaker]text[end]` representation.
 - `transcript.vtt`: UTF-8 WebVTT with `<speaker id=NN>` cue text.
 - `metadata.json`: duration, model revision, initial plan, successful attempts,
-  speaker reconciliation method, output counts, and final tail coverage.
+  speaker reconciliation method, how many chunks needed voice embeddings
+  (`embedding_chunks`), output counts, and final tail coverage.
 
 ## Resumable cache
 

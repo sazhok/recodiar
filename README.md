@@ -14,8 +14,13 @@ the original timeline.
   uncovered active audio.
 - Resumable, deterministic per-chunk cache with atomic metadata writes.
 - Adaptive retry down to a configurable minimum chunk size.
-- Speaker reconciliation from shared context, optional pyannote voice
-  embeddings, or externally supplied diarization turns.
+- Recordings up to `--whole-max-seconds` (between one and two chunk lengths,
+  e.g. `1080` for `600 s` chunks) decoded as one chunk, so a short tail never
+  costs a chunk boundary.
+- Speaker reconciliation from shared context, externally supplied diarization
+  turns, or voice embeddings. Embeddings are consulted only when some voice of
+  the previous chunk found no shared replica in the overlap and a label is
+  still unmapped; the count is `embedding_chunks` in `metadata.json`.
 - JSON, compact MOSS transcript, and speaker-tagged WebVTT output.
 - Tail repair mode for an existing incomplete long-form MOSS run.
 
@@ -44,6 +49,7 @@ recodiar input/ output/chunked \
   --chunk-seconds 600 \
   --overlap-seconds 45 \
   --min-chunk-seconds 120 \
+  --whole-max-seconds 1080 \
   --max-new-tokens 16384 \
   --speaker-embedding-model pyannote/wespeaker-voxceleb-resnet34-LM
 ```

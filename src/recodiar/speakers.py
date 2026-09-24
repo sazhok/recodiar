@@ -88,9 +88,22 @@ def map_speakers(
     embedder: SpeakerEmbedder | None = None,
     embedding_threshold: float = 0.62,
     reference_turns: list[SpeakerTurn] | None = None,
+    stats: dict[str, Any] | None = None,
 ) -> list[tuple[Chunk, list[Segment]]]:
+    """Give every chunk's local labels one recording-wide set.
+
+    In order: reference diarization, then the replicas both decodes share in the overlap, and
+    only then voices. The embedder is consulted **only when the overlap could not have
+    settled it** - when some voice of the previous chunk found no shared replica there (it
+    was silent in those seconds, or the two decodes disagreed about its words) and a local
+    label is still unmapped. When every voice of the previous chunk is matched, an unmapped
+    label is somebody new, and embedding it would only risk calling them someone else.
+
+    Prototypes are computed at that moment, from every span the missing voice has had so far,
+    rather than for every chunk: the check is rare, and a prototype built from the whole
+    history is steadier than one built chunk by chunk.
+    """
     mapped_chunks: list[tuple[Chunk, list[Segment]]] = []
-    prototypes: dict[str, list[np.ndarray]] = {}
     reference_labels = {turn.speaker for turn in reference_turns or []}
     reference_numbers = [
         int(digits)
@@ -98,6 +111,8 @@ def map_speakers(
         if (digits := "".join(character for character in label if character.isdigit()))
     ]
     next_speaker = max(reference_numbers, default=0) + 1
+    if stats is not None:
+        stats.setdefault("embedding_chunks", 0)
 
     for chunk, original in sorted(chunk_segments, key=lambda item: item[0].start):
         local_labels = sorted({segment.speaker for segment in original})
@@ -105,8 +120,10 @@ def map_speakers(
             reference_speaker_votes(original, reference_turns or []), minimum=0.5
         )
         overlap_scores: dict[tuple[str, str], float] = {}
+        previous_voices: set[str] = set()
         if mapped_chunks:
             previous_chunk, previous_segments = mapped_chunks[-1]
+            previous_voices = {segment.speaker for segment in previous_segments}
             overlap_start = max(chunk.start, previous_chunk.start)
             overlap_end = min(chunk.end, previous_chunk.end)
             if overlap_end > overlap_start:
@@ -121,26 +138,26 @@ def map_speakers(
                 mapping[local] = global_label
                 used_global.add(global_label)
 
-        local_vectors: dict[str, np.ndarray] = {}
-        if embedder is not None:
-            for local in local_labels:
-                spans = [
-                    (segment.start, segment.end)
-                    for segment in original
-                    if segment.speaker == local
-                ]
+        missing = previous_voices - set(mapping.values())
+        unmapped = [local for local in local_labels if local not in mapping]
+        if embedder is not None and missing and unmapped:
+            if stats is not None:
+                stats["embedding_chunks"] += 1
+            history = [segment for _, rows in mapped_chunks for segment in rows]
+            prototypes: dict[str, np.ndarray] = {}
+            for global_label in sorted(missing):
+                spans = [(s.start, s.end) for s in history if s.speaker == global_label]
                 vector = embedder.embed(audio_path, spans)
                 if vector is not None:
-                    local_vectors[local] = vector
+                    prototypes[global_label] = vector
             embedding_scores: dict[tuple[str, str], float] = {}
-            already_used = set(mapping.values())
-            for local, vector in local_vectors.items():
-                if local in mapping:
+            for local in unmapped:
+                spans = [(s.start, s.end) for s in original if s.speaker == local]
+                vector = embedder.embed(audio_path, spans)
+                if vector is None:
                     continue
-                for global_label, vectors in prototypes.items():
-                    if global_label not in already_used:
-                        prototype = np.mean(np.stack(vectors), axis=0)
-                        embedding_scores[(local, global_label)] = cosine(vector, prototype)
+                for global_label, prototype in prototypes.items():
+                    embedding_scores[(local, global_label)] = cosine(vector, prototype)
             for local, global_label in greedy_one_to_one(
                 embedding_scores, minimum=embedding_threshold
             ).items():
@@ -162,8 +179,6 @@ def map_speakers(
             for segment in original
         ]
         mapped_chunks.append((chunk, mapped))
-        for local, vector in local_vectors.items():
-            prototypes.setdefault(mapping[local], []).append(vector)
     return mapped_chunks
 
 
